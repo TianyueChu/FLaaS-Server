@@ -68,7 +68,7 @@ def __is_project_complete(project, verbose=False):
         status=Round.Status.COMPLETE)
 
     if len(completed_rounds) >= project.number_of_rounds:
-        verbose and print("Project is complete (reached %d sucesfully completed rounds)" % len(completed_rounds))
+        verbose and print("Project is complete (reached %d successfully completed rounds)" % len(completed_rounds))
         return True
     else:
         return False

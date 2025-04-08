@@ -149,17 +149,20 @@ USE_TZ = True
 #     os.path.join(BASE_DIR, 'static'),
 # )
 
-# S3 for both storages
-STATICFILES_STORAGE = 'django_s3_storage.storage.StaticS3Storage'
-DEFAULT_FILE_STORAGE = 'django_s3_storage.storage.S3Storage'
 
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_S3_BUCKET_NAME = os.environ.get('AWS_S3_BUCKET_NAME')
 AWS_S3_BUCKET_NAME_STATIC = os.environ.get('AWS_S3_BUCKET_NAME_STATIC')
 AWS_REGION = os.environ.get('AWS_REGION')
+
+# S3 for both storages
+STATICFILES_STORAGE = 'django_s3_storage.storage.StaticS3Storage'
+DEFAULT_FILE_STORAGE = 'django_s3_storage.storage.S3Storage'
+
 AWS_S3_FILE_OVERWRITE = True
 AWS_S3_ADDRESSING_STYLE = "path"
+
 
 # Increase memory sizes
 DATA_UPLOAD_MAX_MEMORY_SIZE = 30000000

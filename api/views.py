@@ -6,6 +6,8 @@ from api.serializers import ProjectSerializer, RoundSerializer  # , DeviceRespon
 from django.utils import timezone
 from django.http import Http404, HttpResponseRedirect
 from django.core.files.storage import default_storage
+from django.http import FileResponse
+
 
 from rest_framework.exceptions import ParseError
 from rest_framework.views import APIView
@@ -68,7 +70,33 @@ class GetSamples(APIView):
         device = request.user.profile.device
         samples_index = device.samples_index
 
+        # print(f'1. Samples path: {consts.SAMPLES_PATH}')
+        # print(f'2. Samples filename: {consts.SAMPLES_FILENAME}')
+        # print(f'3. Samples dataset_type: {dataset_type}')
+        # print(f'4. Samples samples_index: {samples_index}')
+        # print(f'5. Samples app: {str(app)}')
+        # print(f'6. Default storage URL: {str(default_storage.base_url)}')
+        # print(f'7. Default storage LOCATION: {str(default_storage.base_location)}')
+        # print(f'8 self.settings.AWS_S3_BUCKET_NAME: {default_storage.settings}')
+
         file = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index), str(app), consts.SAMPLES_FILENAME)
+
+        # folder1 = os.path.join(consts.SAMPLES_PATH, dataset_type)
+        # folder2 = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index))
+        # folder3 = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index), str(app))
+
+        # print(f"FOLDER1 {consts.SAMPLES_PATH} EXISTS? {default_storage.exists(consts.SAMPLES_PATH)}")
+        # print(f"FOLDER2 /{consts.SAMPLES_PATH} EXISTS? {default_storage.exists('/samples')}")
+        # print(f"FOLDER3 {consts.SAMPLES_PATH}/ EXISTS? {default_storage.exists('samples/')}")
+        # print(f"FOLDER4 {folder1} EXISTS? {default_storage.exists(folder1)}")
+        # print(f"FOLDER5 {folder2} EXISTS? {default_storage.exists(folder2)}")
+        # print(f"FOLDER6 {folder3} EXISTS? {default_storage.exists(folder3)}")
+        # print(F"FOLDER7 /samples/IID/0/0/samples.bin EXISTS? {default_storage.exists('/samples/IID/0/0/samples.bin')}")
+        # print(F"FOLDER8 models EXISTS? {default_storage.exists('models')}")
+        # print(F"FOLDER9 test.txt EXISTS? {default_storage.exists('test.txt')}")
+
+        # print(f"Constructed file path: {file}")
+
         if default_storage.exists(file):
             url = default_storage.url(file)
             return HttpResponseRedirect(url)
@@ -76,7 +104,6 @@ class GetSamples(APIView):
             #     return Response(
             #         data.read(),
             #         headers={'Content-Disposition': 'attachment; filename="%s"' % consts.SAMPLES_FILENAME})
-
         else:
             raise Http404
 

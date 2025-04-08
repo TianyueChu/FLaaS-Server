@@ -84,21 +84,37 @@ class Command(BaseCommand):
                 # read json as dict
                 data = default_storage.open(performance_file).read()
                 data = json.loads(data)
+                print(json.dumps(data, indent=2))
 
-                # if Baseline or Joint Samples
-                if data['local_training_worker'].get('epochs'):
-                    losses.append(data['local_training_worker']['epochs'][-1])
+                try:
+                    # if Baseline or Joint Samples
+                    if data['local_training_worker'].get('epochs'):
+                        loss_value = float(data['local_training_worker']['epochs'][-1])
+                        print(f"[{session}] Parsed loss: {loss_value}")
+                        losses.append(loss_value)
+                        # losses.append(data['local_training_worker']['epochs'][-1])
 
-                # else, Joint Models
-                else:
-                    # add RGB losses
-                    app_losses = []
-                    app_losses.append(data['local_training_worker']['Red']['epochs'][-1])
-                    app_losses.append(data['local_training_worker']['Green']['epochs'][-1])
-                    app_losses.append(data['local_training_worker']['Blue']['epochs'][-1])
+                    # else, Joint Models
+                    else:
+                        # add RGB losses
+                        r = float(data['local_training_worker']['Red']['epochs'][-1])
+                        g = float(data['local_training_worker']['Green']['epochs'][-1])
+                        b = float(data['local_training_worker']['Blue']['epochs'][-1])
+                        mean_loss = np.mean([r, g, b])
+                        print(f"[{session}] Parsed RGB mean loss: {mean_loss}")
+                        losses.append(mean_loss)
+                        # app_losses.append(data['local_training_worker']['Red']['epochs'][-1])
+                        # app_losses.append(data['local_training_worker']['Green']['epochs'][-1])
+                        # app_losses.append(data['local_training_worker']['Blue']['epochs'][-1])
+                        # mean of all three losses
+                        # losses.append(np.mean(app_losses))
 
-                    # mean of all three losses
-                    losses.append(np.mean(app_losses))
+                except (ValueError, TypeError, KeyError) as e:
+                    print(f"Skipping session {session} due to malformed data: {e}")
+
+        if not losses:
+            print("No valid losses found for this round.")
+            return float('nan'), float('nan')
 
         # return mean and std
         return np.mean(losses, axis=0), np.std(losses, axis=0)

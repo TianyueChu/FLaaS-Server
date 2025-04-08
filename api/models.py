@@ -46,6 +46,19 @@ class Project(models.Model):
         ('JOINT_MODELS', 'Joint Models'),
     )
 
+    DP_TYPE = (
+        # value, text
+        ('No DP', 'No DP'),
+        ('Central DP', 'Central DP'),
+        ('Local DP', 'Local DP'),  # TODO: Implement Local DP and it's parameters
+    )
+
+    NOISE_CHOICES = (
+        # value, text
+        ('Laplace', 'Laplace'),
+        ('Gaussian', 'Gaussian'),
+    )
+
     create_date = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=30, unique=True)
     description = models.TextField(null=True, blank=True)
@@ -61,6 +74,16 @@ class Project(models.Model):
     number_of_apps = models.PositiveIntegerField(default=3, help_text='Number of apps per device.')
     number_of_samples = models.PositiveIntegerField(default=150, help_text='Number of samples per app.')
     number_of_epochs = models.PositiveIntegerField(default=20, help_text='Number of epochs per device.')
+
+    # DP fields
+    DP_used = models.CharField(max_length=30, choices=DP_TYPE, default=DP_TYPE[0][0],
+                               help_text='Different Types of DP to be applied')
+    epsilon = models.FloatField(
+        help_text="Epsilon parameter of differential privacy. Measures the privacy loss and determines the strength of the privacy guarantee.",
+        default=1.0)
+    delta = models.FloatField(
+        help_text="Delta parameter for differential privacy. Allows for a small probability of failure in maintaining the privacy guarantee.",
+        default=1.0)
 
     # scheduler fields
     responses_ratio_threshold = models.DecimalField(default=0.80, help_text='Ratio of valid devices that needs to be fulfilled for running a trainning round.', max_digits=3, decimal_places=2)
