@@ -49,10 +49,9 @@ class MLModel:
                 global_weights_flat = np.frombuffer(f2.read(), dtype=np.float32)
 
             if len(local_weights_flat) != len(global_weights_flat):
-                print("Mismatch between current and previous weights.")
+                print("Mismatch between local and global weights.")
                 return
 
-            # Convert to NDArrays (lists of arrays), here treating whole model as single layer
             local_weights = [local_weights_flat.copy()]
             global_weights = [global_weights_flat.copy()]
 
@@ -79,7 +78,6 @@ class MLModel:
     def write(self, filename):
         content = ContentFile(self.weights.astype('float32'))
         default_storage.save(filename, content)
-
 
 def compute_clip_model_update(
     local_model_weights: list[np.ndarray],

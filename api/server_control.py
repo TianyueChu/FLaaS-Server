@@ -23,7 +23,7 @@ def aggregate_model(round, into_round):
 
     round_model_path = os.path.join(round_path, consts.MODEL_WEIGHTS_FILENAME)
 
-    dp_type = project.dp_used
+    dp_type = project.DP_used
 
     # get all devices that reported data (weights)
     reported_devices = [response.device for response in round.device_train_request.device_train_responses.all()]
@@ -31,10 +31,11 @@ def aggregate_model(round, into_round):
     for device in reported_devices:
         # find device weights
         file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
-        # use DP
-        if dp_type != "No DP":
+        print("DP type:", dp_type)
+        # Use Central DP
+        if dp_type == "Central DP":
            model.dp_accumulate_model(file_path, round_model_path, clipping_norm=1)
-        # not use DP
+        # use Local DP or Do not use DP
         else:
             model.accumulate_model(file_path)
 
