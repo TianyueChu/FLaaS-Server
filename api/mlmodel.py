@@ -133,7 +133,7 @@ def compute_clip_model_update(
 
 
 def clip_inputs_inplace(model_update: np.ndarray, clipping_norm: float, noise_type: str) -> None:
-    """Scale model update if its total L2 norm exceeds the clipping norm."""
+    """Scale model update if its total L1/L2 norm exceeds the clipping norm."""
     if noise_type == 'gaussian':
         lp_norm = 2
     elif noise_type == 'laplace':
@@ -216,7 +216,7 @@ def privacy_accountant(target_epsilon: float, target_delta: float, fl_rounds: in
     if noise_type == 'gaussian':
         # use RDP accountant from Opacus with Poisson subsampling on the clients
         # assume sensitivity = 1 and rescale in dp_module when doing clipping
-        alphas = [1 + x / 10.0 for x in range(1, 100)] + list(range(12, max_alpha))
+        alphas = [1 + x / 100.0 for x in range(1, 100)] + [1.5 + x / 10.0 for x in range(0, 50)] + list(range(12, max_alpha))
         noise_sigma = get_noise_multiplier(target_epsilon=target_epsilon, target_delta=target_delta, steps=fl_rounds,
                                            sample_rate=sampling_frac, accountant='rdp', alphas=alphas)
 
