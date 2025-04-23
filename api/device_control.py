@@ -2,6 +2,7 @@ from django.utils import timezone
 
 from api.libs import pushwoosh_api as push
 from api.models import DeviceTrainRequest, Project, Round
+from api.mlmodel import privacy_accountant
 
 
 # return all usernames for each device.user belonging to the given project
@@ -24,9 +25,12 @@ def send_train_request(project, devices, verbose=False):
 
     if project.DP_used != Project.DP_TYPE[2][0]:
         localDP = 0
+        epsilon = float('nan')
+        delta = float('nan')
     else:
         localDP = 1
-
+        epsilon = project.epsilon
+        delta = project.delta
 
     # get round model of current round
     round = Round.objects.get(
@@ -53,6 +57,8 @@ def send_train_request(project, devices, verbose=False):
         'round': round.round_number,
         'trainingMode': round.training_mode,
         'localDP': localDP,
+        'epsilon': epsilon,
+        'delta': delta,
     }
 
     # get user_ids
