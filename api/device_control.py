@@ -22,6 +22,12 @@ def send_train_request(project, devices, verbose=False):
         print("No devices available.")
         return
 
+    if project.DP_used != Project.DP_TYPE[2][0]:
+        localDP = 0
+    else:
+        localDP = 1
+
+
     # get round model of current round
     round = Round.objects.get(
         project=project,
@@ -46,6 +52,7 @@ def send_train_request(project, devices, verbose=False):
         'project': project.id,
         'round': round.round_number,
         'trainingMode': round.training_mode,
+        'localDP': localDP,
     }
 
     # get user_ids

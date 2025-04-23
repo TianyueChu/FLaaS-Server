@@ -31,7 +31,6 @@ def aggregate_model(round, into_round):
 
     fl_round = project.number_of_rounds
 
-
     # get all devices that reported data (weights)
     reported_devices = [response.device for response in round.device_train_request.device_train_responses.all()]
 
@@ -41,12 +40,15 @@ def aggregate_model(round, into_round):
         # Use Central DP
         if dp_type == "Central DP":
             model.dp_accumulate_model(file_path, round_model_path, clipping_norm=0.2, noise_type="gaussian")
-            model.dp_aggregate(delta,epsilon,fl_round, clipping_norm=0.2, noise_type="gaussian")
         # use Local DP or Do not use DP
         else:
             model.accumulate_model(file_path)
-            # aggregate weights
-            model.aggregate()
+
+    if dp_type == "Central DP":
+        model.dp_aggregate(delta, epsilon, fl_round, clipping_norm=0.2, noise_type="gaussian")
+    else:
+        # aggregate weights
+        model.aggregate()
 
     # write model into round folder
     file_path = os.path.join(consts.PROJECTS_PATH, str(project.id), str(into_round.round_number), consts.MODEL_WEIGHTS_FILENAME)
