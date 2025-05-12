@@ -50,7 +50,7 @@ class Project(models.Model):
         # value, text
         ('No DP', 'No DP'),
         ('Central DP', 'Central DP'),
-        ('Local DP', 'Local DP'),  # TODO: Implement Local DP and it's parameters
+        ('Local DP', 'Local DP'),
     )
 
     NOISE_CHOICES = (
@@ -58,6 +58,8 @@ class Project(models.Model):
         ('Laplace', 'Laplace'),
         ('Gaussian', 'Gaussian'),
     )
+
+
 
     create_date = models.DateTimeField(auto_now_add=True)
     title = models.CharField(max_length=30, unique=True)
@@ -84,6 +86,12 @@ class Project(models.Model):
     delta = models.FloatField(
         help_text="Delta parameter for differential privacy. Allows for a small probability of failure in maintaining the privacy guarantee.",
         default=1.0)
+
+    # Split Learning
+    use_split_learning = models.BooleanField(
+        default=False,
+        help_text='Enable Split Learning for this project.'
+    )
 
     # scheduler fields
     responses_ratio_threshold = models.DecimalField(default=0.80, help_text='Ratio of valid devices that needs to be fulfilled for running a trainning round.', max_digits=3, decimal_places=2)

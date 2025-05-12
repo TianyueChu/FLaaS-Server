@@ -59,6 +59,7 @@ def send_train_request(project, devices, verbose=False):
         'localDP': localDP,
         'epsilon': epsilon,
         'delta': delta,
+        'useSplitLearning': project.use_split_learning,
     }
 
     # get user_ids
