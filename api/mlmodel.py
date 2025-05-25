@@ -76,6 +76,15 @@ class MLModel:
         except (OSError, IOError) as ex:
             print(f"Error while accumulating model from '{file_path}': {ex}")
 
+    # def use_split_learning(self, file_path):
+    #     try:
+    #         with default_storage.open(file_path) as data:
+    #             weights = np.frombuffer(data.read(), dtype=np.float32)
+    #             print("the weight from SL is", weights)
+    #             print("the shape of weight from SL is", weights.shape)
+    #     except (OSError, IOError) as ex:
+    #         print(ex)
+
     def aggregate(self):
         if self.devices > 1:
             self.weights /= self.devices

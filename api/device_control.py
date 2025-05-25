@@ -25,8 +25,8 @@ def send_train_request(project, devices, verbose=False):
 
     if project.DP_used != Project.DP_TYPE[2][0]:
         localDP = 0
-        epsilon = float('nan')
-        delta = float('nan')
+        epsilon = 0
+        delta = 0
     else:
         localDP = 1
         epsilon = project.epsilon

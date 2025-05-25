@@ -29,6 +29,8 @@ def aggregate_model(round, into_round):
 
     epsilon = project.epsilon
 
+    use_split_learning = project.use_split_learning
+
     fl_round = project.number_of_rounds
 
     # get all devices that reported data (weights)
@@ -37,6 +39,10 @@ def aggregate_model(round, into_round):
     for device in reported_devices:
         # find device weights
         file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
+        # Use Split Learning
+        # if use_split_learning:
+        #     model.use_split_learning(file_path)
+
         # Use Central DP
         if dp_type == "Central DP":
             model.dp_accumulate_model(file_path, round_model_path, clipping_norm=0.2, noise_type="gaussian")
