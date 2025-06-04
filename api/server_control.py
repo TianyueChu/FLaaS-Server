@@ -31,7 +31,12 @@ def aggregate_model(round, into_round):
 
     use_split_learning = project.use_split_learning
 
+    num_samples = project.number_of_samples
+
     fl_round = project.number_of_rounds
+
+
+    HELPER_GROUP_SIZE = 5  # configurable: number of clients per helper
 
     # get all devices that reported data (weights)
     reported_devices = [response.device for response in round.device_train_request.device_train_responses.all()]
@@ -40,8 +45,8 @@ def aggregate_model(round, into_round):
         # find device weights
         file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
         # Use Split Learning
-        # if use_split_learning:
-        #     model.use_split_learning(file_path)
+        if use_split_learning:
+            model.use_split_learning(file_path, num_samples)
 
         # Use Central DP
         if dp_type == "Central DP":
