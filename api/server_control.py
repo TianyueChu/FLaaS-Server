@@ -7,7 +7,11 @@ from api.mlreport import MLReport
 # from api.produce_plots import plot
 from api.libs.filemanagement import filecopy, delfolder
 from api.libs import consts
+from api.libs.helper_client import aggregate_via_helper
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
+import time
 import numpy as np
 
 
@@ -35,31 +39,100 @@ def aggregate_model(round, into_round):
 
     fl_round = project.number_of_rounds
 
-
-    HELPER_GROUP_SIZE = 5  # configurable: number of clients per helper
-
     # get all devices that reported data (weights)
     reported_devices = [response.device for response in round.device_train_request.device_train_responses.all()]
 
-    for device in reported_devices:
-        # find device weights
-        file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
-        # Use Split Learning
-        if use_split_learning:
-            model.use_split_learning(file_path, num_samples)
+    # Check if helper aggregation is enabled
+    if project.use_helper:
+        print("Using helper")
+        BASE_PORT = 8500
+        MAX_WORKERS = 8
+        HELPER_GROUP_SIZE = 5
 
-        # Use Central DP
+        # Step 1: Collect model updates
+        updates = []
+
+        # Load weights from devices
+        for device in reported_devices:
+            file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
+            with default_storage.open(file_path, "rb") as f:
+                weights = np.frombuffer(f.read(), dtype=np.float32)
+                updates.append(weights.tolist())  # Convert to JSON-serializable format
+
+        # Divide updates into groups
+        num_helpers = math.ceil(len(updates) / HELPER_GROUP_SIZE)
+        grouped_updates = [
+            updates[i * HELPER_GROUP_SIZE:(i + 1) * HELPER_GROUP_SIZE] for i in range(num_helpers)
+        ]
+        group_sizes = [len(group) for group in grouped_updates]
+
+        print(f'group size: {len(grouped_updates[0][0])}')
+
+        # Step 3: Launch helpers in parallel and collect partial aggregates
+        print("Launching helpers in parallel...")
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {}
+            all_aggs = []
+            for i, group in enumerate(grouped_updates):
+                port = BASE_PORT + i
+                start_time = time.time()
+                print(f"Submitting group {i + 1}/{num_helpers} to helper on port {port}")
+                future = executor.submit(aggregate_via_helper, group, use_split_learning, port)
+                futures[future] = (i, start_time, group_sizes[i], port)
+
+            for future in as_completed(futures):
+                group_index, start_time, group_size, port = futures[future]
+                end_time = time.time()
+                elapsed = end_time - start_time
+
+                try:
+                    result = future.result()
+                    agg = np.array(result, dtype=np.float32)
+                    print(f"Helper {group_index + 1} (port {port}, size {group_size}) finished in {elapsed:.2f} seconds")
+                    print(f'Aggregation shape: {agg.shape}')
+                    all_aggs.append(agg)
+                except Exception as e:
+                    print(f"[ERROR] Helper {group_index + 1} (port {port}) failed after {elapsed:.2f}s: {e}")
+
+            if not all_aggs:
+                raise RuntimeError("No successful aggregation from helpers.")
+
+            ## aggregate the results from all the helpers
+            all_aggs = np.mean(all_aggs, axis=0).tolist()
+
+            if dp_type == "Central DP":
+                model.dp_accumulate_model_helper(all_aggs, round_model_path, clipping_norm=0.2, noise_type="gaussian")
+            else:
+                model.accumulate_model_helper(all_aggs)
+
         if dp_type == "Central DP":
-            model.dp_accumulate_model(file_path, round_model_path, clipping_norm=0.2, noise_type="gaussian")
-        # use Local DP or Do not use DP
+            model.dp_aggregate(delta, epsilon, fl_round, clipping_norm=0.2, noise_type="gaussian")
         else:
-            model.accumulate_model(file_path)
+            # aggregate weights
+            model.aggregate()
+        print("Helper-based aggregation complete.")
 
-    if dp_type == "Central DP":
-        model.dp_aggregate(delta, epsilon, fl_round, clipping_norm=0.2, noise_type="gaussian")
     else:
-        # aggregate weights
-        model.aggregate()
+        for device in reported_devices:
+            # find device weights
+            file_path = os.path.join(round_path, str(device.id), consts.MODEL_WEIGHTS_FILENAME)
+
+            # Use Split Learning
+            if use_split_learning:
+                model.use_split_learning(file_path, num_samples)
+
+            # Use Central DP
+            if dp_type == "Central DP":
+                model.dp_accumulate_model(file_path, round_model_path, clipping_norm=0.2, noise_type="gaussian")
+            # use Local DP or Do not use DP
+            else:
+                model.accumulate_model(file_path)
+
+        if dp_type == "Central DP":
+            model.dp_aggregate(delta, epsilon, fl_round, clipping_norm=0.2, noise_type="gaussian")
+        else:
+            # aggregate weights
+            model.aggregate()
 
     # write model into round folder
     file_path = os.path.join(consts.PROJECTS_PATH, str(project.id), str(into_round.round_number), consts.MODEL_WEIGHTS_FILENAME)

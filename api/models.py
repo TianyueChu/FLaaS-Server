@@ -93,6 +93,12 @@ class Project(models.Model):
         help_text='Enable Split Learning for this project.'
     )
 
+    # Helper
+    use_helper = models.BooleanField(
+        default=False,
+        help_text='Enable helper for this project.'
+    )
+
     # scheduler fields
     responses_ratio_threshold = models.DecimalField(default=0.80, help_text='Ratio of valid devices that needs to be fulfilled for running a trainning round.', max_digits=3, decimal_places=2)
     max_training_time = models.PositiveIntegerField(default=60, help_text='Max training time (in minutes) for a round to wait for incoming training responses.')

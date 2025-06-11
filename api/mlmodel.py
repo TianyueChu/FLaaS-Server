@@ -48,6 +48,16 @@ class MLModel:
             print("Something went wrong while accumulating model at '%s'" % file_path)
             print(ex)
 
+    def accumulate_model_helper(self, agg: np.ndarray) -> None:
+        try:
+            if len(agg) == len(self.weights):
+                self.weights += agg
+                self.devices += 1
+            else:
+                print(f"Ignoring weights with incorrect length: {len(agg)} (expected {len(self.weights)})")
+        except Exception as ex:
+            print(f"Error in accumulate_model_helper: {ex}")
+
     def dp_accumulate_model(self, file_path: str, model_file_path: str, clipping_norm: float,
                             noise_type: str, ) -> None:
         try:
@@ -80,6 +90,35 @@ class MLModel:
 
         except (OSError, IOError) as ex:
             print(f"Error while accumulating model from '{file_path}': {ex}")
+
+    def dp_accumulate_model_helper(self, agg: np.ndarray, model_file_path: str,
+                                   clipping_norm: float, noise_type: str) -> None:
+        try:
+            with default_storage.open(model_file_path, "rb") as f:
+                global_weights_all = np.frombuffer(f.read(), dtype=np.float32)
+
+            if global_weights_all.shape[0] > self.size:
+                print("Loaded full model weights, but size exceeds expected limit — resetting to zeros.")
+                global_weights_all = np.zeros(self.size, dtype=np.float32)
+
+            global_weights = np.nan_to_num(global_weights_all, nan=0.0)
+            local_weights = np.array(agg, dtype=np.float32)
+
+            inspect_weights("local_weights (before clip)", local_weights)
+            inspect_weights("global_weights", global_weights)
+
+            clipped_weights = compute_clip_model_update(local_weights, global_weights, clipping_norm, noise_type)
+
+            if len(clipped_weights) != len(self.weights):
+                print(f"Ignoring weights with incorrect length: {len(clipped_weights)}")
+                return
+
+            self.weights += clipped_weights
+            self.devices += 1
+
+        except (OSError, IOError) as ex:
+            print(f"Error while accumulating model from helper: {ex}")
+
 
     def use_split_learning(self, file_path, num_samples):
         try:
