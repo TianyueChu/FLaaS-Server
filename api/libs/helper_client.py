@@ -33,11 +33,28 @@ def send_updates_to_helper(updates, use_split_learning, port: int):
     }
     response = requests.post(f"http://localhost:{port}/aggregate", json=payload)
     response.raise_for_status()
-    return response.json()["aggregated"]
+    response_data = response.json()
+    if "aggregated" not in response_data:
+        print("Invalid helper response: missing 'aggregated' key")
+    return response_data["aggregated"]
 
 def aggregate_via_helper(group_updates, use_split_learning=False, port=8500):
     container = run_helper_container(port)
     try:
         return send_updates_to_helper(group_updates, use_split_learning, port)
+    except Exception as e:
+        print("[ERROR] Helper crashed or failed to aggregate:")
+        try:
+            print(container.logs().decode(errors="replace"))
+        except Exception as log_err:
+            print(f"[WARNING] Could not read container logs: {log_err}")
+        raise e
     finally:
-        container.stop()
+        try:
+            print("[DEBUG] Helper container logs:\n")
+            print(container.logs().decode())
+            # for showing the fastapi
+            time.sleep(30)
+            container.stop()
+        except Exception as stop_err:
+            print(f"[WARNING] Failed to stop container: {stop_err}")

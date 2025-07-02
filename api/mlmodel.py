@@ -126,54 +126,57 @@ class MLModel:
                 weights = np.frombuffer(data.read(), dtype=np.float32)
                 ## hard-coded here
                 # number of samples is manually set in the device side, also the model size and number of class
-                len_bottleneck = num_samples * 62720
-                bottleneck =  weights[:len_bottleneck].reshape((num_samples, 62720))
-                labels = weights[len_bottleneck:].reshape((num_samples, 10))
-                labels_indices = np.argmax(labels, axis=1)  # Convert one-hot to class indices
+                if len(weights) == len(self.weights):
+                    return True
+                else:
+                    len_bottleneck = num_samples * 62720
+                    bottleneck =  weights[:len_bottleneck].reshape((num_samples, 62720))
+                    labels = weights[len_bottleneck:].reshape((num_samples, 10))
+                    labels_indices = np.argmax(labels, axis=1)  # Convert one-hot to class indices
 
-                bottleneck_tensor = torch.tensor(bottleneck.reshape((-1, 7, 7, 1280)), dtype=torch.float32)
-                labels_tensor = torch.tensor(labels_indices, dtype=torch.long)
+                    bottleneck_tensor = torch.tensor(bottleneck.reshape((-1, 7, 7, 1280)), dtype=torch.float32)
+                    labels_tensor = torch.tensor(labels_indices, dtype=torch.long)
 
-                model = TrainHead()
-                criterion = nn.CrossEntropyLoss()
-                optimizer = optim.Adam(model.parameters(), lr=1e-3)
+                    model = TrainHead()
+                    criterion = nn.CrossEntropyLoss()
+                    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-                num_epochs = 10
+                    num_epochs = 10
 
-                for epoch in range(num_epochs):
-                    model.train()
-                    optimizer.zero_grad()
+                    for epoch in range(num_epochs):
+                        model.train()
+                        optimizer.zero_grad()
 
-                    outputs = model(bottleneck_tensor)
-                    loss = criterion(outputs, labels_tensor)
+                        outputs = model(bottleneck_tensor)
+                        loss = criterion(outputs, labels_tensor)
 
-                    loss.backward()
-                    optimizer.step()
+                        loss.backward()
+                        optimizer.step()
 
-                    print(f"SL Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item():.4f}")
+                        print(f"SL Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item():.4f}")
 
-                    preds = torch.argmax(outputs, dim=1)
-                    accuracy = (preds == labels_tensor).float().mean().item()
-                    print(f"SL training accuracy: {accuracy:.2%}")
+                        preds = torch.argmax(outputs, dim=1)
+                        accuracy = (preds == labels_tensor).float().mean().item()
+                        print(f"SL training accuracy: {accuracy:.2%}")
 
-                # Save the trained weights
-                fc_weight = model.fc.weight.data.numpy()  # shape: (10, 62720)
-                fc_bias = model.fc.bias.data.numpy()  # shape: (10,)
+                    # Save the trained weights
+                    fc_weight = model.fc.weight.data.numpy()  # shape: (10, 62720)
+                    fc_bias = model.fc.bias.data.numpy()  # shape: (10,)
 
-                # Transpose weight to match client layout: [62720, 10]
-                fc_weight_tflite = fc_weight.T  # shape: (62720, 10)
+                    # Transpose weight to match client layout: [62720, 10]
+                    fc_weight_tflite = fc_weight.T  # shape: (62720, 10)
 
-                # Flatten both
-                flat_weights = fc_weight_tflite.flatten()  # length: 627200
-                flat_bias = fc_bias.flatten()  # length: 10
+                    # Flatten both
+                    flat_weights = fc_weight_tflite.flatten()  # length: 627200
+                    flat_bias = fc_bias.flatten()  # length: 10
 
-                # Concatenate
-                combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)  # length: 627210
+                    # Concatenate
+                    combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)  # length: 627210
 
-                # Save to file using default_storage
-                byte_data = combined.tobytes()
-                default_storage.save(file_path, ContentFile(byte_data))
-                print(f"Weights saved to {file_path} ({len(byte_data)} bytes)")
+                    # Save to file using default_storage
+                    byte_data = combined.tobytes()
+                    default_storage.save(file_path, ContentFile(byte_data))
+                    print(f"Weights saved to {file_path} ({len(byte_data)} bytes)")
 
         except (OSError, IOError) as ex:
             print(ex)

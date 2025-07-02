@@ -66,7 +66,7 @@ def aggregate_model(round, into_round):
         ]
         group_sizes = [len(group) for group in grouped_updates]
 
-        print(f'group size: {len(grouped_updates[0][0])}')
+       # print(f'group size: {len(grouped_updates[0][0])}')
 
         # Step 3: Launch helpers in parallel and collect partial aggregates
         print("Launching helpers in parallel...")
@@ -79,23 +79,22 @@ def aggregate_model(round, into_round):
                 print(f"Submitting group {i + 1}/{num_helpers} to helper on port {port}")
                 future = executor.submit(aggregate_via_helper, group, use_split_learning, port)
                 futures[future] = (i, start_time, group_sizes[i], port)
+                time.sleep(0.1)  # optional to reduce contention
 
             for future in as_completed(futures):
                 group_index, start_time, group_size, port = futures[future]
                 end_time = time.time()
                 elapsed = end_time - start_time
-
                 try:
                     result = future.result()
                     agg = np.array(result, dtype=np.float32)
                     print(f"Helper {group_index + 1} (port {port}, size {group_size}) finished in {elapsed:.2f} seconds")
-                    print(f'Aggregation shape: {agg.shape}')
                     all_aggs.append(agg)
                 except Exception as e:
                     print(f"[ERROR] Helper {group_index + 1} (port {port}) failed after {elapsed:.2f}s: {e}")
 
             if not all_aggs:
-                raise RuntimeError("No successful aggregation from helpers.")
+                print("No successful aggregation from helpers.")
 
             ## aggregate the results from all the helpers
             all_aggs = np.mean(all_aggs, axis=0).tolist()

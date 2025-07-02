@@ -118,7 +118,7 @@ def __check_for_round_completion(round, verbose=False):
                 project.save()
 
             else:
-                # atempt training in new round
+                # attempt training in new round
                 __attempt_device_training(next_round, verbose)
 
         else:
@@ -141,7 +141,7 @@ def __invalidate_round(round, verbose=False):
     # just copy the model
     sc.copy_model(round, next_round)
 
-    # atempt training in new round
+    # attempt training in new round
     __attempt_device_training(next_round, verbose)
 
 
@@ -219,6 +219,15 @@ def tick(verbose=False):
         status = last_round.status
         if status == Round.Status.WAIT:
             verbose and print("Round status 'Wait': Evaluating device statuses.")
+            if project.use_knowledge_distillation:
+                # If KD is used, you may want to trigger a teacher model step or log something
+                print("Knowledge Distillation is enabled for this project.")
+                # run KD training here
+                # load the teacher model
+                # the size of the teacher model
+                # load the student model
+                # the size of the student model
+                # load the data for training
             __attempt_device_training(last_round, verbose)
 
         elif status == Round.Status.TRAINING:

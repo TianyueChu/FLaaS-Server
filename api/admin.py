@@ -13,7 +13,7 @@ class ProjectAdmin(admin.ModelAdmin):
                 'training_mode',
                 'number_of_samples', 'number_of_epochs', 'responses_ratio_threshold', 'max_training_time',
                 'valid_round_training_threshold', 'power_plugged_only', 'battery_level_threshold', 'seed',
-                'current_round', 'use_split_learning', 'use_helper')
+                'current_round', 'use_split_learning', 'use_helper', 'use_knowledge_distillation')
         }),
         ('Privacy Parameters', {
             'classes': ('collapse',),

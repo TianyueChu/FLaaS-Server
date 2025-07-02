@@ -6,6 +6,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -16,31 +21,32 @@ class AggregationRequest(BaseModel):
 @app.post("/aggregate")
 async def aggregate(request: AggregationRequest):
     updates = np.array(request.updates, dtype=np.float32)  # shape: (num_clients, model_size)
-    print(f"size of the updates: {len(updates)}", flush=True)
+    logger.info(f"size of the updates: {len(updates)}")
 
     if not request.use_split_learning:
         # Simple averaging
         aggregated = np.mean(updates, axis=0).tolist()
     else:
         # Split Learning aggregation
+        logger.info(f"using split learning: {request.use_split_learning}")
         sl_outputs = []
         for update in updates:
-            print(f"size of the update: {update.size}", flush=True)
+            logger.info(f"size of the update: {update.size}")
             processed = use_split_learning(update)
             if processed is not None:
-                print(f"size of the SL result: {processed.size}", flush=True)
+                logger.info(f"size of the SL result: {processed.size}")
                 sl_outputs.append(processed)
             else:
-                print("Split learning result is None — skipping", flush=True)
+                logger.warning("Split learning result is None — skipping")
 
         if not sl_outputs:
-            print("No valid updates received for split learning.", flush=True)
+            logger.warning("No valid updates received for split learning.")
             return {"error": "No valid updates received for split learning."}
-
+        else:
+            logger.info("valid updates received for split learning")
         aggregated = np.mean(np.array(sl_outputs), axis=0).tolist()
 
-    return aggregated
-
+    return {"aggregated": aggregated}
 
 
 def use_split_learning(update, num_samples=150):
@@ -51,7 +57,7 @@ def use_split_learning(update, num_samples=150):
         bottleneck = weights[:len_bottleneck].reshape((num_samples, 62720))
         labels = weights[len_bottleneck:].reshape((num_samples, 10))
     except ValueError:
-        print("Shape mismatch in split learning update, skipping")
+        logger.warning("Shape mismatch in split learning update, skipping")
         return None
 
     labels_indices = np.argmax(labels, axis=1)  # Convert one-hot to class indices
