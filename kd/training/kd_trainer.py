@@ -1,51 +1,99 @@
+import time
 import torch
 import torch.nn.functional as F
-from typing import Optional
+from torch.utils.data import DataLoader
+from typing import Optional, Tuple
 
-
-def knowledge_distillation_train(teacher_model: torch.nn.Module,
-                                 student_model: torch.nn.Module,
-                                 trainloader: torch.utils.data.DataLoader,
-                                 criterion: torch.nn.Module,
-                                 optimizer: torch.optim.Optimizer,
-                                 teacher_percentage: float = 0.5,
-                                 # defines the weight of the teacher's predictions vs the dataset's labels
-                                 temperature: float = 2,  # defines the softness of the softmax temperature
-                                 device: Optional[str] = None):
-    '''
-    this function performs a single epoch of training with knowledge distillation
-    '''
+def KDTrainer(
+    teacher_model: torch.nn.Module,
+    student_model: torch.nn.Module,
+    trainloader: DataLoader,
+    testloader: DataLoader,
+    criterion: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    teacher_percentage: float = 0.5,
+    temperature: float = 4.0,
+    device: Optional[str] = None
+) -> Tuple[float, float, float]:
+    """
+    Performs one epoch of KD training and returns:
+    - training loss
+    - training accuracy
+    - test accuracy
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    student_model = student_model.to(device)
     teacher_model = teacher_model.to(device)
+    student_model = student_model.to(device)
+
     teacher_model.eval()
     student_model.train()
 
+    print("Starting KD training epoch...")
+    print(f"Using device: {device}")
+    print(f"Teacher percentage: {teacher_percentage}, Temperature: {temperature}")
+
+    start_time = time.time()
+
     epoch_loss = 0.0
+    correct_train = 0
+    total_train = 0
 
-    for inputs, targets in trainloader:
-        inputs = inputs.to(device)
-        targets = targets.to(device)
-        # the teacher is not trained so there is no need to keep the gradients
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        # Get teacher predictions (soft targets)
         with torch.no_grad():
-            teacher_targets = teacher_model(inputs).to(device)
-            teacher_targets = F.softmax(teacher_targets / temperature, dim=1)
-            teacher_targets = teacher_targets.to(device)
+            teacher_logits = teacher_model(inputs)
+            soft_teacher_probs = F.softmax(teacher_logits / temperature, dim=1)
 
-        # we perform a typical torch training loop, but with the teacher's predictions as targets as well
+        # Get student predictions
+        student_logits = student_model(inputs)
+
+        # Compute losses
+        ce_loss = criterion(student_logits, targets)
+        kd_loss = F.kl_div(
+            F.log_softmax(student_logits / temperature, dim=1),
+            soft_teacher_probs,
+            reduction='batchmean'
+        ) * (temperature ** 2)
+        total_loss = teacher_percentage * kd_loss + (1. - teacher_percentage) * ce_loss
+
         optimizer.zero_grad()
-        outputs = student_model(inputs)
-        # we calculate the loss with the targets from the dataset predictions
-        absolute_loss = criterion(outputs, targets)
-        # as well as the loss with the teacher's predictions
-        teacher_loss = criterion(outputs, teacher_targets)
-        # and we perform a weighted sum of the two losses
-        total_loss = teacher_loss * teacher_percentage + (1 - teacher_percentage) * absolute_loss
         total_loss.backward()
         optimizer.step()
+
+        # Track loss and accuracy
         epoch_loss += total_loss.item() * inputs.size(0)
+        _, predicted = torch.max(student_logits, 1)
+        correct_train += (predicted == targets).sum().item()
+        total_train += targets.size(0)
 
-        epoch_loss = epoch_loss / len(trainloader.dataset)
+        if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == len(trainloader):
+            print(f"Batch {batch_idx + 1}/{len(trainloader)} - Loss: {total_loss.item():.4f}")
 
-    return epoch_loss
+    avg_loss = epoch_loss / len(trainloader.dataset)
+    train_acc = correct_train / total_train * 100
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    print(f"\nEpoch completed in {elapsed_time:.2f} seconds. Avg Train Loss: {avg_loss:.4f}, Train Accuracy: {train_acc:.2f}%")
+
+    # Evaluate test accuracy
+    student_model.eval()
+    correct_test = 0
+    total_test = 0
+    with torch.no_grad():
+        for inputs, targets in testloader:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = student_model(inputs)
+            _, predicted = torch.max(outputs, 1)
+            correct_test += (predicted == targets).sum().item()
+            total_test += targets.size(0)
+
+    test_acc = correct_test / total_test * 100
+    print(f"Test Accuracy: {test_acc:.2f}%\n")
+
+    return avg_loss, train_acc, test_acc
+

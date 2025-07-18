@@ -2,9 +2,19 @@ from django.utils import timezone
 from django.db.models import Q
 from datetime import timedelta
 
+import os
+import io
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+
 from api.models import Project, Round, DeviceTrainRequest, DeviceStatusResponse
 from api import device_control as dc
 from api import server_control as sc
+
+from api.libs import consts
+import torch
+
+from kd.run.kd_pipeline import run_knowledge_distillation
 
 PAST_DEVICE_STATUS_REPORTS_CONSIDERATION_MINS = 60
 
@@ -219,15 +229,42 @@ def tick(verbose=False):
         status = last_round.status
         if status == Round.Status.WAIT:
             verbose and print("Round status 'Wait': Evaluating device statuses.")
+
             if project.use_knowledge_distillation:
-                # If KD is used, you may want to trigger a teacher model step or log something
                 print("Knowledge Distillation is enabled for this project.")
-                # run KD training here
-                # load the teacher model
-                # the size of the teacher model
-                # load the student model
-                # the size of the student model
-                # load the data for training
+                # Step 1: Run KD training
+                student_model = run_knowledge_distillation(batch_size=8, epochs=1)
+
+                project_id = project.id
+                round_id = 0  # for initial round
+
+                # Step 2: Serialize the model into memory
+                buffer = io.BytesIO()
+                torch.save(student_model.state_dict(), buffer)
+                buffer.seek(0)
+
+                # Read model bytes once
+                model_bytes = buffer.read()
+                model_size_bytes = len(model_bytes)
+                model_size_mb = model_size_bytes / (1024 * 1024)
+
+                # Step 3: Construct the remote path
+                remote_model_path = os.path.join(
+                    consts.PROJECTS_PATH, str(project_id), str(round_id), consts.MODEL_WEIGHTS_FILENAME
+                )
+
+                # Step 4: Overwrite if exists
+                print(f"Uploading the new student model as the global model: {remote_model_path}")
+                if default_storage.exists(remote_model_path):
+                    default_storage.delete(remote_model_path)
+
+                # Step 5: Save the new model
+                default_storage.save(remote_model_path, ContentFile(model_bytes))
+
+                # Step 6: Log result
+                print(f"KD-trained student model saved to: {remote_model_path}")
+                print(f"Student model size: {model_size_bytes:,} bytes ({model_size_mb:.2f} MB)")
+
             __attempt_device_training(last_round, verbose)
 
         elif status == Round.Status.TRAINING:
