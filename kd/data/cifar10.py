@@ -2,7 +2,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 import numpy as np
 
-def load_cifar10_dataloaders(batch_size=64, root='kd/data/data', fraction=1/20):
+def load_cifar10_dataloaders(batch_size=64, root='kd/data/data', fraction=1/3):
     # Define standard CIFAR-10 normalization
     transform = transforms.Compose([
         transforms.ToTensor(),

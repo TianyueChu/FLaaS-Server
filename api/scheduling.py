@@ -233,7 +233,7 @@ def tick(verbose=False):
             if project.use_knowledge_distillation:
                 print("Knowledge Distillation is enabled for this project.")
                 # Step 1: Run KD training
-                student_model = run_knowledge_distillation(batch_size=8, epochs=1)
+                student_model = run_knowledge_distillation(batch_size=64, epochs=10)
 
                 project_id = project.id
                 round_id = 0  # for initial round
