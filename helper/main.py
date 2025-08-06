@@ -21,7 +21,7 @@ class AggregationRequest(BaseModel):
 @app.post("/aggregate")
 async def aggregate(request: AggregationRequest):
     updates = np.array(request.updates, dtype=np.float32)  # shape: (num_clients, model_size)
-    logger.info(f"size of the updates: {len(updates)}")
+    logger.info(f"number of the client: {len(updates)}")
 
     if not request.use_split_learning:
         # Simple averaging

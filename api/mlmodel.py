@@ -68,7 +68,6 @@ class MLModel:
                 global_weights_all = np.frombuffer(f2.read(), dtype=np.float32)
 
             if global_weights_all.shape[0] > self.size:
-                print("Loaded full model weights, but size exceeds expected limit — resetting to zeros.")
                 global_weights_all = np.zeros(self.size, dtype=np.float32)
 
             global_weights_flat = np.nan_to_num(global_weights_all, nan=0.0)
@@ -76,8 +75,8 @@ class MLModel:
             local_weights = local_weights_flat.copy()
             global_weights = global_weights_flat.copy()
 
-            inspect_weights("local_weights (before clip)", local_weights)
-            inspect_weights("global_weights", global_weights)
+            # inspect_weights("local_weights (before clip)", local_weights)
+            # inspect_weights("global_weights", global_weights)
 
             clipped_weights = compute_clip_model_update(local_weights, global_weights, clipping_norm, noise_type)
 
@@ -98,14 +97,13 @@ class MLModel:
                 global_weights_all = np.frombuffer(f.read(), dtype=np.float32)
 
             if global_weights_all.shape[0] > self.size:
-                print("Loaded full model weights, but size exceeds expected limit — resetting to zeros.")
                 global_weights_all = np.zeros(self.size, dtype=np.float32)
 
             global_weights = np.nan_to_num(global_weights_all, nan=0.0)
             local_weights = np.array(agg, dtype=np.float32)
 
-            inspect_weights("local_weights (before clip)", local_weights)
-            inspect_weights("global_weights", global_weights)
+            # inspect_weights("local_weights (before clip)", local_weights)
+            # inspect_weights("global_weights", global_weights)
 
             clipped_weights = compute_clip_model_update(local_weights, global_weights, clipping_norm, noise_type)
 
