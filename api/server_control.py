@@ -4,6 +4,7 @@ import torch.nn as nn
 from torchvision import datasets, transforms
 import torchvision.models as models
 from torch.utils.data import DataLoader
+from torchvision.models import MobileNet_V2_Weights
 
 from django.core.files.storage import default_storage
 
@@ -145,18 +146,17 @@ def aggregate_model(round, into_round):
     # New evaluation step: compute and record test accuracy
     # --------------------------------------------------------------------------
 
-    pytorch_model = MobileNetV2_PoolFC()
-    print("Evaluating model...")
-    pytorch_model = load_weights_to_model(pytorch_model, model.weights)
+    pytorch_model = MobileNetV2_FC()
+    load_fc_from_flat_vector(pytorch_model, model.weights)
 
-    try:
-        accuracy = evaluate_test_accuracy(pytorch_model, batch_size=64, fraction=0.1)
-        # Print accuracy for immediate feedback
-        print(f"Aggregated model test accuracy: {accuracy:.4f}")
-    except Exception:
+    # pytorch_model = load_weights_to_model(pytorch_model, model.weights)
+
+    # try:
+        # accuracy = evaluate_test_accuracy(pytorch_model, batch_size=32, fraction=0.01)
+    # except Exception:
         # If evaluation fails, continue without halting training.  The
         # error will already have been logged by ``evaluate_test_accuracy``.
-        pass
+        # pass
 
     # TODO: Enable once server-based eval is implemented
     # # compute required list of result filenames (from number of apps)
@@ -182,23 +182,20 @@ def evaluate_test_accuracy(model: torch.nn.Module, batch_size=64, fraction=1.0) 
     Returns:
         Test accuracy as a float between 0 and 1.
     """
-    print("Evaluating model...")
-    model.eval()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     # Use transforms matching pretrained weights
-    # weights = models.MobileNet_V2_Weights.DEFAULT
-    # transform = weights.transforms()
+    weights = models.MobileNet_V2_Weights.DEFAULT
+    transform = weights.transforms()
 
-    # Prepare CIFAR‑10 test loader
-    transform = transforms.Compose([
-        transforms.Resize((32, 32)),  # CIFAR-10 size
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
-                             std=[0.2023, 0.1994, 0.2010])
-    ])
+    # transform = transforms.Compose([
+    #    transforms.Resize((224, 224)),
+    #    transforms.ToTensor(),
+    #    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+    #                         std=[0.229, 0.224, 0.225])
+    # ])
 
     # Load dataset
     test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
@@ -209,27 +206,20 @@ def evaluate_test_accuracy(model: torch.nn.Module, batch_size=64, fraction=1.0) 
 
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+    print("Evaluating model...")
+    model.eval()
     correct = 0
     total = 0
 
     with torch.no_grad():
-        for batch_idx, (images, labels) in enumerate(test_loader, 1):
-            images, labels = images.to(device), labels.to(device)
-            try:
-                outputs = model(images)
-            except Exception as e:
-                print(f"[ERROR] During inference at batch {batch_idx}: {e}")
-                continue
-            _, predicted = outputs.max(1)
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-            batch_correct = (predicted == labels).sum().item()
-            batch_total = labels.size(0)
-            batch_accuracy = batch_correct / batch_total
-
-            print(f"[Batch {batch_idx}] Accuracy: {batch_accuracy:.4f}")
-
-            correct += batch_correct
-            total += batch_total
+    print('Test Accuracy: {:.2f}%'.format(100 * correct / total))
 
     accuracy = correct / total if total > 0 else 0.0
     return accuracy
@@ -317,16 +307,19 @@ def __delete_round_models(project, round):
 class MobileNetV2_FC(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
-
         # MobileNetV2 backbone (exclude classifier head)
-        base_model = models.mobilenet_v2(pretrained=True)
+        # base_model = models.mobilenet_v2(pretrained=True)
+        weights = MobileNet_V2_Weights.DEFAULT
+        base_model = models.mobilenet_v2(weights=weights)
         self.features = base_model.features  # output: (B, 1280, 7, 7)
-        self.dropout = nn.Dropout(0.2)
         self.fc = nn.Linear(1280 * 7 * 7, num_classes)
+
+        # Initialize fc1 with Xavier and zero bias
+        nn.init.xavier_uniform_(self.fc.weight)
+        nn.init.zeros_(self.fc.bias)
 
     def forward(self, x):
         x = self.features(x)        # (B, 1280, 7, 7)
-        x = self.dropout(x)
         x = x.view(x.size(0), -1)   # flatten to (B, 62720)
         x = self.fc(x)              # → (B, 10)
         return x
@@ -338,93 +331,13 @@ class MobileNetV2_FC(nn.Module):
         ])
 
 
-class MobileNetV2_ExpandedFC(nn.Module):
-    def __init__(self, num_classes=10, pretrained=True):
-        super().__init__()
-
-        # Load pretrained chenyaofo MobileNetV2 for CIFAR-10
-        base = torch.hub.load(
-            "chenyaofo/pytorch-cifar-models",
-            "cifar10_mobilenetv2_x1_4",
-            pretrained=pretrained
-        )
-
-        self.backbone = nn.Sequential(*list(base.children())[:-1])  # Remove the original classifier
-
-        # New classifier: 28672 → 62720 → 10
-        self.fc1 = nn.Linear(28672, 62720)
-        self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Linear(62720, num_classes)
-        # Initialize fc1 with Xavier and zero bias
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.zeros_(self.fc1.bias)
-
-    def forward(self, x):
-        x = self.backbone(x)           # (B, 28672)
-        x = x.view(x.size(0), -1)      # Flatten
-        x = self.fc1(x)                # → (B, 62720)
-        x = self.relu(x)
-        x = self.fc2(x)                # → (B, 10)
-        return x
-
-    def flatten_weights(self) -> np.ndarray:
-        return np.concatenate([
-            self.fc2.weight.detach().cpu().numpy().flatten(),
-            self.fc2.bias.detach().cpu().numpy().flatten()
-        ])
-
-class MobileNetV2_PoolFC(nn.Module):
-    def __init__(self, num_classes=10, pretrained=True):
-        super().__init__()
-
-        # Load pretrained chenyaofo MobileNetV2 for CIFAR-10
-        base = torch.hub.load(
-            "chenyaofo/pytorch-cifar-models",
-            "cifar10_mobilenetv2_x1_4",
-            pretrained=pretrained
-        )
-
-        # Use backbone (exclude original classifier)
-        self.features = base.features
-
-        # Determine flattened feature size dynamically
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, 3, 32, 32)  # CIFAR-10 image size
-            dummy_output = self.features(dummy_input)
-            flattened_dim = dummy_output.view(1, -1).shape[1]
-            print(f"{dummy_output.shape}->{flattened_dim}")
-
-        # Custom classifier
-        self.fc1 = nn.Linear(flattened_dim, 62720)
-        self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Linear(62720, num_classes)
-
-        # Initialize fc1 with Xavier and zero bias
-        nn.init.xavier_uniform_(self.fc1.weight)
-        nn.init.zeros_(self.fc1.bias)
-
-    def forward(self, x):
-        x = self.features(x)          # → [B, C, H, W]
-        x = torch.flatten(x, 1)       # → [B, C*H*W]
-        x = self.fc1(x)               # → [B, 62720]
-        x = self.relu(x)
-        x = self.fc2(x)               # → [B, num_classes]
-        return x
-
-    def flatten_weights(self) -> np.ndarray:
-        return np.concatenate([
-            self.fc2.weight.detach().cpu().numpy().flatten(),
-            self.fc2.bias.detach().cpu().numpy().flatten()
-        ])
-
-
 def load_weights_to_model(pytorch_model: torch.nn.Module, flat_weights: np.ndarray):
     """
-    Load a flat weight vector into only the classifier head (fc2) of a PyTorch model.
+    Load a flat weight vector into only the classifier head of a PyTorch model.
 
     Args:
         pytorch_model: instance of MobileNetV2_CIFAR10
-        flat_weights: 1D NumPy array containing only fc2 parameters, in order
+        flat_weights: 1D NumPy array containing only fc parameters, in order
     """
     assert isinstance(flat_weights, np.ndarray) and flat_weights.ndim == 1
 
@@ -436,7 +349,7 @@ def load_weights_to_model(pytorch_model: torch.nn.Module, flat_weights: np.ndarr
     new_state_dict = {}
 
     # Collect the layers you want to replace
-    target_layers = ['fc2.weight', 'fc2.bias']
+    target_layers = ['fc.weight', 'fc.bias']
     state_dict = pytorch_model.state_dict()
 
     for name in target_layers:
@@ -465,3 +378,26 @@ def load_weights_to_model(pytorch_model: torch.nn.Module, flat_weights: np.ndarr
     print("[SUCCESS] weights loaded into model.")
 
     return pytorch_model
+
+def load_fc_from_flat_vector(model: nn.Module, flat_w):
+    # flat_w: 1D torch.Tensor or np.ndarray
+    if isinstance(flat_w, np.ndarray):
+        flat_w = torch.from_numpy(flat_w)
+    flat_w = flat_w.float().clone()  # make sure float32
+
+    in_f = model.fc.in_features  # 62720 for your head
+    out_f = model.fc.out_features  # 10 for CIFAR-10
+    expected = in_f * out_f + out_f
+    assert flat_w.numel() == expected, f"Size mismatch: got {flat_w.numel()}, expected {expected}"
+
+    W = flat_w[:in_f * out_f].view(out_f, in_f)  # PyTorch Linear: [out, in]
+    b = flat_w[in_f * out_f:]
+
+    # Load to model's device
+    dev = next(model.parameters()).device
+    model.fc.weight.data.copy_(W.to(dev))
+    model.fc.bias.data.copy_(b.to(dev))
+
+    print("Loaded FC:",
+          f"W shape={tuple(model.fc.weight.shape)} std={model.fc.weight.std().item():.4f}",
+          f"b shape={tuple(model.fc.bias.shape)} std={model.fc.bias.std().item():.4f}")
