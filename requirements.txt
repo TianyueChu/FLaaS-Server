@@ -6,6 +6,8 @@ djangorestframework_simplejwt
 boto3
 django-s3-storage
 whitenoise
+requests
+docker
 numpy
 scipy
 pandas
