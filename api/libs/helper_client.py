@@ -90,7 +90,7 @@ def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, rou
             print("[DEBUG] Helper container logs:\n")
             print(container.logs().decode())
             # for showing the fastapi
-            time.sleep(10)
+            # time.sleep(1)
             container.stop()
         except Exception as stop_err:
             print(f"[WARNING] Failed to stop container: {stop_err}")
