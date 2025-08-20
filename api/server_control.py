@@ -17,9 +17,8 @@ from api.libs.helper_client import aggregate_via_helper
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
-import time
 import numpy as np
-
+import json, time, requests
 
 def aggregate_model(round, into_round):
     # get project
@@ -82,7 +81,7 @@ def aggregate_model(round, into_round):
                 port = BASE_PORT + i
                 start_time = time.time()
                 print(f"Submitting group {i + 1}/{num_helpers} to helper on port {port}")
-                future = executor.submit(aggregate_via_helper, group, use_split_learning, port)
+                future = executor.submit(aggregate_via_helper, group, use_split_learning, port, round_id=round.round_number,helper_id=i+1)
                 futures[future] = (i, start_time, group_sizes[i], port)
                 time.sleep(0.1)  # optional to reduce contention
 

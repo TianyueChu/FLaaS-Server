@@ -1,6 +1,7 @@
 import requests
 import docker
 import time
+import json
 import numpy as np
 
 HELPER_IMAGE = "fl-helper"           # Docker image name
@@ -26,22 +27,57 @@ def run_helper_container(port: int):
     container.stop()
     raise RuntimeError("Helper on port %d failed to start." % port)
 
-def send_updates_to_helper(updates, use_split_learning, port: int):
+def send_updates_to_helper(updates, use_split_learning, port: int, round_id=None, helper_id=None, timeout=180):
+    url = f"http://{HELPER_HOST}:{port}/aggregate"
+
+    # Build payload and serialize ONCE to count exact bytes sent
     payload = {
         "updates": updates,
-        "use_split_learning": use_split_learning
+        "use_split_learning": bool(use_split_learning),
+        # optional identifiers so the helper can log them too
+        "round": round_id,
+        "helper_id": helper_id,
     }
-    response = requests.post(f"http://localhost:{port}/aggregate", json=payload)
-    response.raise_for_status()
-    response_data = response.json()
-    if "aggregated" not in response_data:
-        print("Invalid helper response: missing 'aggregated' key")
-    return response_data["aggregated"]
 
-def aggregate_via_helper(group_updates, use_split_learning=False, port=8500):
+    body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    uplink_bytes = len(body_bytes)
+
+    headers = {
+        "Content-Type": "application/json",
+        # Disable compression so downlink counts are exact on the wire
+        "Accept-Encoding": "identity",
+        # Pass IDs in headers as well for helper-side logs
+        "X-Round-Id": "" if round_id is None else str(round_id),
+        "X-Helper-Id": "" if helper_id is None else str(helper_id),
+    }
+
+    t0 = time.perf_counter()
+    with requests.post(url, data=body_bytes, headers=headers, stream=True, timeout=timeout) as r:
+        r.raise_for_status()
+        # Read raw bytes (no decompression) to get true downlink size
+        raw = r.raw.read(decode_content=False)
+    latency = time.perf_counter() - t0
+
+    downlink_bytes = len(raw)
+
+    # Parse JSON from raw bytes
+    data = json.loads(raw.decode("utf-8"))
+    if "aggregated" not in data:
+        raise RuntimeError("Invalid helper response: missing 'aggregated' key")
+    aggregated = data["aggregated"]
+
+    print(
+        f"[NET] round={round_id} helper={helper_id} port={port} "
+        f"uplink_bytes={uplink_bytes} downlink_bytes={downlink_bytes} "
+        f"status=200 latency_s={latency:.3f}"
+    )
+    return aggregated
+
+
+def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, round_id=None, helper_id=None):
     container = run_helper_container(port)
     try:
-        return send_updates_to_helper(group_updates, use_split_learning, port)
+        return send_updates_to_helper(group_updates, use_split_learning, port, round_id=round_id, helper_id=helper_id)
     except Exception as e:
         print("[ERROR] Helper crashed or failed to aggregate:")
         try:
@@ -54,7 +90,7 @@ def aggregate_via_helper(group_updates, use_split_learning=False, port=8500):
             print("[DEBUG] Helper container logs:\n")
             print(container.logs().decode())
             # for showing the fastapi
-            time.sleep(30)
+            time.sleep(10)
             container.stop()
         except Exception as stop_err:
             print(f"[WARNING] Failed to stop container: {stop_err}")
