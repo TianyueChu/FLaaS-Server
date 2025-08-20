@@ -13,8 +13,7 @@ def run_helper_container(port: int):
     container = client.containers.run(
         HELPER_IMAGE,
         ports={f"{HELPER_PORT}/tcp": port},
-        detach=True,
-        remove=True
+        detach=True
     )
 
     for _ in range(10):
@@ -77,7 +76,15 @@ def send_updates_to_helper(updates, use_split_learning, port: int, round_id=None
 def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, round_id=None, helper_id=None):
     container = run_helper_container(port)
     try:
-        return send_updates_to_helper(group_updates, use_split_learning, port, round_id=round_id, helper_id=helper_id)
+        result = send_updates_to_helper(group_updates, use_split_learning, port,
+                                        round_id=round_id, helper_id=helper_id)
+
+        usage, limit = get_container_mem_usage_limit(container)
+        print(f"[MEM] round={round_id} helper={helper_id} port={port} "
+              f"usage={usage / 1024 / 1024:.1f} MiB limit={limit / 1024 / 1024:.1f} MiB "
+              f"headroom={(limit - usage) / 1024 / 1024:.1f} MiB")
+
+        return result
     except Exception as e:
         print("[ERROR] Helper crashed or failed to aggregate:")
         try:
@@ -94,3 +101,9 @@ def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, rou
             container.stop()
         except Exception as stop_err:
             print(f"[WARNING] Failed to stop container: {stop_err}")
+
+def get_container_mem_usage_limit(container):
+    s = container.stats(stream=False)
+    usage = int(s["memory_stats"].get("usage", 0))
+    limit = int(s["memory_stats"].get("limit", 0))
+    return usage, limit
