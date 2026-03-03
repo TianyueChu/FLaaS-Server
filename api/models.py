@@ -25,12 +25,13 @@ class Project(models.Model):
 
     MODEL_CHOICES = (
         # value, text
-        ('CIFAR10_B20', 'CIFAR-10 - B20'),
+        ('MobileNet', 'MobileNet'),
     )
 
     DATASET_CHOICES = (
         # value, text
         ('CIFAR10', 'CIFAR-10'),
+        ('WuW', 'WuW'),
     )
 
     DATASET_TYPE = (

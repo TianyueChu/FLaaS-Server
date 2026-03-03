@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import os, resource, pathlib
 
 import logging
 
@@ -12,6 +13,11 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+try:
+    import psutil
+    _PROC = psutil.Process(os.getpid())
+except Exception:
+    _PROC = None
 app = FastAPI()
 
 class AggregationRequest(BaseModel):
@@ -20,7 +26,11 @@ class AggregationRequest(BaseModel):
 
 @app.post("/aggregate")
 async def aggregate(request: AggregationRequest):
+    _mem_snapshot("before-parse")
     updates = np.array(request.updates, dtype=np.float32)  # shape: (num_clients, model_size)
+    _mem_snapshot("after-parse")
+    _cg_peak()
+
     logger.info(f"number of the client: {len(updates)}")
 
     if not request.use_split_learning:
@@ -45,6 +55,9 @@ async def aggregate(request: AggregationRequest):
         else:
             logger.info("valid updates received for split learning")
         aggregated = np.mean(np.array(sl_outputs), axis=0).tolist()
+
+    _mem_snapshot("before-return")
+    _cg_peak()
 
     return {"aggregated": aggregated}
 
@@ -106,3 +119,26 @@ class TrainHead(nn.Module):
         x = x.permute(0, 3, 1, 2)         # [B, 7, 7, 1280] → [B, 1280, 7, 7]
         x = x.reshape(x.size(0), -1)      # Flatten to [B, 62720]
         return self.fc(x)
+
+
+def _mem_snapshot(tag: str = ""):
+    # ru_maxrss: on Linux it's in KiB; in Docker you'll be on Linux.
+    ru = resource.getrusage(resource.RUSAGE_SELF)
+    maxrss_mb = ru.ru_maxrss / 1024.0
+    rss_mb = _PROC.memory_info().rss / (1024**2) if _PROC else -1
+    print(f"[MEMPROC]{'['+tag+']' if tag else ''} rss_mb={rss_mb:.1f} maxrss_mb={maxrss_mb:.1f}")
+
+def _cg_peak():
+    # cgroup v2: /sys/fs/cgroup/memory.peak ; v1: memory.max_usage_in_bytes
+    p2 = pathlib.Path("/sys/fs/cgroup/memory.peak")
+    p1 = pathlib.Path("/sys/fs/cgroup/memory/memory.max_usage_in_bytes")
+    try:
+        if p2.exists():
+            val = int(p2.read_text().strip() or "0")
+        elif p1.exists():
+            val = int(p1.read_text().strip() or "0")
+        else:
+            return
+        print(f"[MEMCG] peak_mb={val/1024/1024:.1f}")
+    except Exception:
+        pass

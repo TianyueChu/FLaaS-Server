@@ -15,4 +15,3 @@ scikit-learn
 matplotlib
 opacus
 torchvision
-requests
