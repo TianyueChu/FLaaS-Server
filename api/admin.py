@@ -1,7 +1,25 @@
+from django import forms
 from django.contrib import admin
-from api.models import Profile, Project, Device
+
+from api.models import Device, Profile, Project
+
+
+class ProjectAdminForm(forms.ModelForm):
+    class Meta:
+        model = Project
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        model_value = cleaned_data.get('model')
+        mapped_dataset = Project.MODEL_DATASET_MAP.get(model_value)
+        if mapped_dataset is not None:
+            cleaned_data['dataset'] = mapped_dataset
+        return cleaned_data
 
 class ProjectAdmin(admin.ModelAdmin):
+    form = ProjectAdminForm
+
     fieldsets = (
         ('General', {
             'fields': ('title', 'description', 'status')  # other general fields
@@ -22,7 +40,10 @@ class ProjectAdmin(admin.ModelAdmin):
         }),
     )
 
+    class Media:
+        js = ('api/project_admin.js',)
+
 # Register your models here.
 admin.site.register(Profile)
-admin.site.register(Project)
+admin.site.register(Project, ProjectAdmin)
 admin.site.register(Device)

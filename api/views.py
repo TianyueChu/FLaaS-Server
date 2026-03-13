@@ -70,7 +70,15 @@ class GetSamples(APIView):
         device = request.user.profile.device
         samples_index = device.samples_index
 
-        file = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index), str(app), consts.SAMPLES_FILENAME)
+        project = request.user.profile.project
+        selected_dataset = project.dataset if project else 'CIFAR10'
+
+        if selected_dataset == 'CIFAR10':
+            samples_filename = consts.SAMPLES_FILENAME
+        else:
+            samples_filename = 'mfcc_dataset.bin'
+
+        file = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index), str(app), samples_filename)
 
 
         if default_storage.exists(file):

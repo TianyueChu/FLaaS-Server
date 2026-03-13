@@ -25,8 +25,14 @@ class Project(models.Model):
 
     MODEL_CHOICES = (
         # value, text
+        ('CIFAR10_B20', 'CIFAR-10 - B20'),
         ('MobileNet', 'MobileNet'),
     )
+
+    MODEL_DATASET_MAP = {
+        'CIFAR10_B20': 'CIFAR10',
+        'MobileNet': 'WuW',
+    }
 
     DATASET_CHOICES = (
         # value, text
@@ -68,7 +74,7 @@ class Project(models.Model):
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_CHOICES[0][0], help_text='Project State.')
 
-    model = models.CharField(max_length=30, choices=MODEL_CHOICES, default=MODEL_CHOICES[0][0], help_text='Model type.')
+    model = models.CharField(max_length=30, choices=MODEL_CHOICES, default='MobileNet', help_text='Model type.')
     dataset = models.CharField(max_length=30, choices=DATASET_CHOICES, default=DATASET_CHOICES[0][0], help_text='Training dataset.')
     dataset_type = models.CharField(max_length=30, choices=DATASET_TYPE)
     training_mode = models.CharField(max_length=30, choices=TRAINING_MODE_TYPE)
@@ -118,6 +124,13 @@ class Project(models.Model):
 
     # read-only fields
     current_round = models.PositiveIntegerField(default=0)
+
+    def save(self, *args, **kwargs):
+        # Keep dataset in sync with selected model.
+        mapped_dataset = self.MODEL_DATASET_MAP.get(self.model)
+        if mapped_dataset is not None:
+            self.dataset = mapped_dataset
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
