@@ -78,6 +78,8 @@ class GetSamples(APIView):
         else:
             samples_filename = 'mfcc_dataset.bin'
 
+        print(f"project dataset: {selected_dataset}")  # debug
+
         file = os.path.join(consts.SAMPLES_PATH, dataset_type, str(samples_index), str(app), samples_filename)
 
 

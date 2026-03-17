@@ -2,12 +2,17 @@ import numpy as np
 
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from api.libs import consts
 
 from opacus.accountants.utils import get_noise_multiplier
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
+import os
+import tempfile
+import tensorflow as tf
 
 import numpy as np
 
@@ -39,6 +44,7 @@ class MLModel:
         try:
             with default_storage.open(file_path) as data:
                 weights = np.frombuffer(data.read(), dtype=np.float32)
+                # print("Accumulating model from '%s', weights length: %d, self.weights length: %d" % (file_path, len(weights), len(self.weights)))
                 if len(weights) == len(self.weights):
                     self.weights += weights
                     self.devices += 1
@@ -216,9 +222,64 @@ class MLModel:
 
         self.devices = 0
 
+    def update_keras_model_weights(self, source_keras_path):
+        if not default_storage.exists(source_keras_path):
+            raise FileNotFoundError(f"Keras model not found in storage: {source_keras_path}")
+
+
+        with default_storage.open(source_keras_path, "rb") as source_file:
+            model_bytes = source_file.read()
+
+        # Keras expects a filesystem path when loading `.keras` models.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".keras") as temp_file:
+            temp_file.write(model_bytes)
+            temp_model_path = temp_file.name
+
+        try:
+            keras_model = tf.keras.models.load_model(temp_model_path)
+
+            # 2. Get the last dense layer by its name
+            last_dense_layer = keras_model.get_layer('dense')
+
+            # 3. Determine the expected shapes for kernel (weights) and bias
+            # Based on our previous analysis, input features = 576, output units = 2
+            expected_kernel_shape = (576, 2)
+            expected_bias_shape = (2,)
+
+            # Calculate the number of elements for kernel and bias
+            num_kernel_elements = np.prod(expected_kernel_shape)
+            num_bias_elements = np.prod(expected_bias_shape)
+
+            # Verify that the new_flat_weights array has enough elements
+            if len(self.weights) != (num_kernel_elements + num_bias_elements):
+                raise ValueError(f"Provided flat weights array has {len(self.weights)} elements, but expected {num_kernel_elements + num_bias_elements} for the last dense layer.")
+
+            # 4. Reshape the new_flat_weights into kernel and bias components
+            new_kernel_weights = self.weights[:num_kernel_elements].reshape(expected_kernel_shape)
+            new_biases = self.weights[num_kernel_elements:].reshape(expected_bias_shape)
+
+            # 5. Set these new weights to the last dense layer
+            last_dense_layer.set_weights([new_kernel_weights, new_biases])
+
+            converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
+            tflite_model = converter.convert()
+
+            target_tflite_path = os.path.join(consts.MODELS_PATH, "mobilenetv3_mfcc_tf.tflite")
+            if default_storage.exists(target_tflite_path):
+                default_storage.delete(target_tflite_path)
+
+            default_storage.save(target_tflite_path, ContentFile(tflite_model))
+            print(f"Updated TFLite model weights saved to {target_tflite_path}")
+
+        finally:
+            if os.path.exists(temp_model_path):
+                os.remove(temp_model_path)
+
+
     def write(self, filename):
         content = ContentFile(self.weights.astype('float32').tobytes())
         default_storage.save(filename, content)
+        print(f"Model weights saved to {filename}")
 
 
 def compute_clip_model_update(

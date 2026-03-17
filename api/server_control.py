@@ -6,6 +6,7 @@ import torchvision.models as models
 from torch.utils.data import DataLoader
 from torchvision.models import MobileNet_V2_Weights
 
+from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
 from api.mlmodel import MLModel
@@ -20,12 +21,18 @@ import math
 import numpy as np
 import json, time, requests
 
+KERAS_MODEL_FILENAME = "mobilenetv3_mfcc_tf.keras"
+
 def aggregate_model(round, into_round):
     # get project
     project = round.project
 
     # init model with zeros (to append weights during aggregation)
-    model = MLModel(consts.MODEL_SIZE, "zeros")
+    if project.model == 'MobileNet': ## (576 * 2) + 2 = 1152 + 2 = 1154
+         model = MLModel(1154, "zeros")
+         print("model size: %d" % model.size)
+    else:
+         model = MLModel(consts.MODEL_SIZE, "zeros")
 
     # round level
     round_path = os.path.join(consts.PROJECTS_PATH, str(project.id), str(round.round_number))
@@ -137,16 +144,28 @@ def aggregate_model(round, into_round):
             # aggregate weights
             model.aggregate()
 
+    
+    if project.model == 'MobileNet':
+        # download the keras model
+        source_keras_path = os.path.join(consts.MODELS_PATH, KERAS_MODEL_FILENAME)
+       
+        if not default_storage.exists(source_keras_path):
+            raise FileNotFoundError(f"Keras model not found in storage: {source_keras_path}")
+        
+        # change the last two layers of the keras model with the aggregated weights
+        model.update_keras_model_weights(source_keras_path)
+    
     # write model into round folder
     file_path = os.path.join(consts.PROJECTS_PATH, str(project.id), str(into_round.round_number), consts.MODEL_WEIGHTS_FILENAME)
     model.write(file_path)
+
 
     # --------------------------------------------------------------------------
     # New evaluation step: compute and record test accuracy
     # --------------------------------------------------------------------------
 
-    pytorch_model = MobileNetV2_FC()
-    load_fc_from_flat_vector(pytorch_model, model.weights)
+    # pytorch_model = MobileNetV2_FC()
+    # load_fc_from_flat_vector(pytorch_model, model.weights)
 
     # pytorch_model = load_weights_to_model(pytorch_model, model.weights)
 
