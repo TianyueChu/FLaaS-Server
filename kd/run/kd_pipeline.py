@@ -3,18 +3,30 @@ import torch.nn as nn
 import torch.optim as optim
 
 
-from kd.models.teacher import load_teacher_model
-from kd.models.student import StudentModel
+from kd.models.teacher import load_teacher_model, load_teacher_model_wakeword
+from kd.models.student import StudentModel,StudentModel_wuw
 from kd.data.cifar10 import load_cifar10_dataloaders
+from kd.data.wuw import load_wuw_dataloaders
 from kd.training.kd_trainer import KDTrainer
 
+from api.models import DeviceTrainRequest, Project, Round
 
-def run_knowledge_distillation(batch_size=8, epochs=5):
+
+def run_knowledge_distillation(dataset, batch_size=8, epochs=5):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load models
-    teacher = load_teacher_model()
-    student = StudentModel()
+    if dataset == "CIFAR10":
+        print("Loading CIFAR10")
+        teacher = load_teacher_model()
+        student = StudentModel()
+        # Load data
+        train_loader, test_loader = load_cifar10_dataloaders(batch_size=batch_size)
+    else:
+        print("Loading Wakeword dataset")
+        teacher = load_teacher_model_wakeword()
+        student = StudentModel_wuw()
+        train_loader, test_loader,_ = load_wuw_dataloaders(batch_size=batch_size)
 
     # Print model sizes
     def model_size(model):
@@ -23,8 +35,6 @@ def run_knowledge_distillation(batch_size=8, epochs=5):
     print(f"Teacher model size: {model_size(teacher):,} parameters")
     print(f"Student model size: {model_size(student):,} parameters")
 
-    # Load data
-    train_loader, test_loader = load_cifar10_dataloaders(batch_size=batch_size)
 
     # Optimizer and loss
     optimizer = optim.SGD(student.parameters(), lr=0.01, momentum=0.9)

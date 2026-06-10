@@ -260,8 +260,8 @@ class MLModel:
 
             # 5. Average the new weights with the existing weights of the last dense layer
             existing_kernel_weights, existing_biases = last_dense_layer.get_weights()
-            new_kernel_weights = existing_kernel_weights * 0.8 + new_kernel_weights * 0.2
-            new_biases = existing_biases * 0.8 + new_biases * 0.2
+            new_kernel_weights = existing_kernel_weights * 0.1 + new_kernel_weights * 0.9
+            new_biases = existing_biases * 0.1 + new_biases * 0.9
 
             # 6. Set these new weights to the last dense layer
             last_dense_layer.set_weights([new_kernel_weights, new_biases])

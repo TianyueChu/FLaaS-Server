@@ -1,6 +1,8 @@
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
 import numpy as np
+
+from torch.utils.data import DataLoader, Subset
+
 
 def load_cifar10_dataloaders(batch_size=64, root='kd/data/data', fraction=1/10):
     # Define standard CIFAR-10 normalization
@@ -31,3 +33,5 @@ def load_cifar10_dataloaders(batch_size=64, root='kd/data/data', fraction=1/10):
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
+
+

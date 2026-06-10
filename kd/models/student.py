@@ -1,5 +1,5 @@
 import torch.nn as nn
-from torchvision.models import mobilenet_v2
+from torchvision.models import mobilenet_v2, mobilenet_v3_small
 
 class StudentModel(nn.Module):
     def __init__(self):
@@ -14,3 +14,17 @@ class StudentModel(nn.Module):
         x = x.view(x.size(0), -1)      # -> [B, 1280]
         x = self.classifier(x)         # -> [B, 10]
         return x
+
+
+class StudentModel_wuw(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = mobilenet_v3_small()
+        in_features = self.model.classifier[-1].in_features
+        self.model.classifier[-1] = nn.Linear(
+            in_features,
+            2
+        )
+
+    def forward(self, x):
+        return self.model(x)
