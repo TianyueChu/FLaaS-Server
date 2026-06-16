@@ -23,6 +23,7 @@ app = FastAPI()
 class AggregationRequest(BaseModel):
     updates: List[List[float]]  # List of updates from clients (each is a list of floats)
     use_split_learning: bool
+    dataset: str = 'CIFAR10'
 
 @app.post("/aggregate")
 async def aggregate(request: AggregationRequest):
@@ -38,11 +39,11 @@ async def aggregate(request: AggregationRequest):
         aggregated = np.mean(updates, axis=0).tolist()
     else:
         # Split Learning aggregation
-        logger.info(f"using split learning: {request.use_split_learning}")
+        logger.info(f"using split learning: {request.use_split_learning} (dataset={request.dataset})")
         sl_outputs = []
         for update in updates:
             logger.info(f"size of the update: {update.size}")
-            processed = use_split_learning(update)
+            processed = use_split_learning(update, dataset=request.dataset)
             if processed is not None:
                 logger.info(f"size of the SL result: {processed.size}")
                 sl_outputs.append(processed)
@@ -62,23 +63,39 @@ async def aggregate(request: AggregationRequest):
     return {"aggregated": aggregated}
 
 
-def use_split_learning(update, num_samples=150):
+def use_split_learning(update, num_samples=150, dataset='CIFAR10'):
     weights = np.array(update, dtype=np.float32)
-    len_bottleneck = num_samples * 62720
+
+    # Dataset-specific bottleneck size and number of classes:
+    #   CIFAR10: bottleneck = 1280*7*7 = 62720, num_classes = 10
+    #   WuW:     bottleneck = 576,             num_classes = 2
+    if dataset == 'WuW':
+        bottleneck_size = 576
+        num_classes = 2
+        bottleneck_shape = (-1, 1, 576)
+        spatial_input = False
+    else:
+        bottleneck_size = 62720
+        num_classes = 10
+        bottleneck_shape = (-1, 7, 7, 1280)
+        spatial_input = True
+
+    len_bottleneck = num_samples * bottleneck_size
 
     try:
-        bottleneck = weights[:len_bottleneck].reshape((num_samples, 62720))
-        labels = weights[len_bottleneck:].reshape((num_samples, 10))
+        bottleneck = weights[:len_bottleneck].reshape((num_samples, bottleneck_size))
+        labels = weights[len_bottleneck:].reshape((num_samples, num_classes))
     except ValueError:
         logger.warning("Shape mismatch in split learning update, skipping")
         return None
 
     labels_indices = np.argmax(labels, axis=1)  # Convert one-hot to class indices
 
-    bottleneck_tensor = torch.tensor(bottleneck.reshape((-1, 7, 7, 1280)), dtype=torch.float32)
+    bottleneck_tensor = torch.tensor(bottleneck.reshape(bottleneck_shape), dtype=torch.float32)
     labels_tensor = torch.tensor(labels_indices, dtype=torch.long)
 
-    model = TrainHead()
+    model = TrainHead(flatten_dim=bottleneck_size, num_classes=num_classes,
+                      spatial_input=spatial_input)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
@@ -93,21 +110,25 @@ def use_split_learning(update, num_samples=150):
         optimizer.step()
 
     # Save the trained weights
-    fc_weight = model.fc.weight.data.numpy()  # shape: (10, 62720)
-    fc_bias = model.fc.bias.data.numpy()      # shape: (10,)
-    fc_weight_tflite = fc_weight.T            # shape: (62720, 10)
+    fc_weight = model.fc.weight.data.numpy()  # shape: (num_classes, bottleneck_size)
+    fc_bias = model.fc.bias.data.numpy()      # shape: (num_classes,)
+    fc_weight_tflite = fc_weight.T            # shape: (bottleneck_size, num_classes)
 
-    flat_weights = fc_weight_tflite.flatten()  # length: 627200
-    flat_bias = fc_bias.flatten()              # length: 10
+    flat_weights = fc_weight_tflite.flatten()
+    flat_bias = fc_bias.flatten()
 
-    combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)  # length: 627210
+    combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)
     return combined
 
 
 class TrainHead(nn.Module):
-    def __init__(self, input_channels=1280, bottleneck_size=7, num_classes=10):
+    def __init__(self, input_channels=1280, bottleneck_size=7, num_classes=10,
+                 flatten_dim=None, spatial_input=True):
         super(TrainHead, self).__init__()
-        self.flatten_dim = input_channels * bottleneck_size * bottleneck_size  # 62720
+        if flatten_dim is None:
+            flatten_dim = input_channels * bottleneck_size * bottleneck_size  # 62720
+        self.flatten_dim = flatten_dim
+        self.spatial_input = spatial_input
         self.fc = nn.Linear(self.flatten_dim, num_classes)
         self._init_weights()
 
@@ -116,8 +137,9 @@ class TrainHead(nn.Module):
         nn.init.zeros_(self.fc.bias)
 
     def forward(self, x):
-        x = x.permute(0, 3, 1, 2)         # [B, 7, 7, 1280] → [B, 1280, 7, 7]
-        x = x.reshape(x.size(0), -1)      # Flatten to [B, 62720]
+        if self.spatial_input:
+            x = x.permute(0, 3, 1, 2)         # [B, 7, 7, 1280] → [B, 1280, 7, 7]
+        x = x.reshape(x.size(0), -1)          # Flatten to [B, flatten_dim]
         return self.fc(x)
 
 

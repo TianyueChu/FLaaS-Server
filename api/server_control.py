@@ -88,7 +88,7 @@ def aggregate_model(round, into_round):
                 port = BASE_PORT + i
                 start_time = time.time()
                 print(f"Submitting group {i + 1}/{num_helpers} to helper on port {port}")
-                future = executor.submit(aggregate_via_helper, group, use_split_learning, port, round_id=round.round_number,helper_id=i+1)
+                future = executor.submit(aggregate_via_helper, group, use_split_learning, port, round_id=round.round_number, helper_id=i+1, dataset=project.dataset)
                 futures[future] = (i, start_time, group_sizes[i], port)
                 time.sleep(0.1)  # optional to reduce contention
 
@@ -129,7 +129,7 @@ def aggregate_model(round, into_round):
 
             # Use Split Learning
             if use_split_learning:
-                model.use_split_learning(file_path, num_samples)
+                model.use_split_learning(file_path, num_samples, dataset=project.dataset)
 
             # Use Central DP
             if dp_type == "Central DP":

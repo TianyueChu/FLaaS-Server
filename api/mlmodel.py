@@ -124,24 +124,36 @@ class MLModel:
             print(f"Error while accumulating model from helper: {ex}")
 
 
-    def use_split_learning(self, file_path, num_samples):
+    def use_split_learning(self, file_path, num_samples, dataset):
         try:
             with default_storage.open(file_path) as data:
                 weights = np.frombuffer(data.read(), dtype=np.float32)
-                ## hard-coded here
-                # number of samples is manually set in the device side, also the model size and number of class
+                ## number of samples is manually set in the device side
+                # Dataset-specific bottleneck size and number of classes:
+                #   CIFAR10: bottleneck = 1280*7*7 = 62720, num_classes = 10
+                #   WuW:     bottleneck = 576,             num_classes = 2
+                if dataset == 'WuW':
+                    bottleneck_size = 576
+                    num_classes = 2
+                    bottleneck_shape = (-1, 1, 576)
+                else:
+                    bottleneck_size = 62720
+                    num_classes = 10
+                    bottleneck_shape = (-1, 7, 7, 1280)
+
                 if len(weights) == len(self.weights):
                     return True
                 else:
-                    len_bottleneck = num_samples * 62720
-                    bottleneck =  weights[:len_bottleneck].reshape((num_samples, 62720))
-                    labels = weights[len_bottleneck:].reshape((num_samples, 10))
+                    len_bottleneck = num_samples * bottleneck_size
+                    bottleneck = weights[:len_bottleneck].reshape((num_samples, bottleneck_size))
+                    labels = weights[len_bottleneck:].reshape((num_samples, num_classes))
                     labels_indices = np.argmax(labels, axis=1)  # Convert one-hot to class indices
 
-                    bottleneck_tensor = torch.tensor(bottleneck.reshape((-1, 7, 7, 1280)), dtype=torch.float32)
+                    bottleneck_tensor = torch.tensor(bottleneck.reshape(bottleneck_shape), dtype=torch.float32)
                     labels_tensor = torch.tensor(labels_indices, dtype=torch.long)
 
-                    model = TrainHead()
+                    model = TrainHead(flatten_dim=bottleneck_size, num_classes=num_classes,
+                                      spatial_input=(dataset != 'WuW'))
                     criterion = nn.CrossEntropyLoss()
                     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
@@ -164,20 +176,17 @@ class MLModel:
                         print(f"SL training accuracy: {accuracy:.2%}")
 
                     # Save the trained weights
-                    fc_weight = model.fc.weight.data.numpy()  # shape: (10, 62720)
-                    fc_bias = model.fc.bias.data.numpy()  # shape: (10,)
+                    fc_weight = model.fc.weight.data.numpy()  # shape: (num_classes, bottleneck_size)
+                    fc_bias = model.fc.bias.data.numpy()      # shape: (num_classes,)
 
-                    # Transpose weight to match client layout: [62720, 10]
-                    fc_weight_tflite = fc_weight.T  # shape: (62720, 10)
+                    # Transpose weight to match client layout: [bottleneck_size, num_classes]
+                    fc_weight_tflite = fc_weight.T
 
-                    # Flatten both
-                    flat_weights = fc_weight_tflite.flatten()  # length: 627200
-                    flat_bias = fc_bias.flatten()  # length: 10
+                    flat_weights = fc_weight_tflite.flatten()
+                    flat_bias = fc_bias.flatten()
 
-                    # Concatenate
-                    combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)  # length: 627210
+                    combined = np.concatenate([flat_weights, flat_bias]).astype(np.float32)
 
-                    # Save to file using default_storage
                     byte_data = combined.tobytes()
                     default_storage.save(file_path, ContentFile(byte_data))
                     print(f"Weights saved to {file_path} ({len(byte_data)} bytes)")
@@ -415,9 +424,13 @@ def inspect_weights(name: str, weights: np.ndarray):
 
 
 class TrainHead(nn.Module):
-    def __init__(self, input_channels=1280, bottleneck_size=7, num_classes=10):
+    def __init__(self, input_channels=1280, bottleneck_size=7, num_classes=10,
+                 flatten_dim=None, spatial_input=True):
         super(TrainHead, self).__init__()
-        self.flatten_dim = input_channels * bottleneck_size * bottleneck_size  # 62720
+        if flatten_dim is None:
+            flatten_dim = input_channels * bottleneck_size * bottleneck_size  # 62720
+        self.flatten_dim = flatten_dim
+        self.spatial_input = spatial_input
         self.fc = nn.Linear(self.flatten_dim, num_classes)
         self._init_weights()
 
@@ -427,7 +440,8 @@ class TrainHead(nn.Module):
         nn.init.zeros_(self.fc.bias)
 
     def forward(self, x):
-        # Expecting input shape: [B, 7, 7, 1280] → permute to [B, 1280, 7, 7]
-        x = x.permute(0, 3, 1, 2)
-        x = x.reshape(x.size(0), -1)   # Flatten to [B, 62720]
+        if self.spatial_input:
+            # Expecting input shape: [B, 7, 7, 1280] → permute to [B, 1280, 7, 7]
+            x = x.permute(0, 3, 1, 2)
+        x = x.reshape(x.size(0), -1)   # Flatten to [B, flatten_dim]
         return self.fc(x)

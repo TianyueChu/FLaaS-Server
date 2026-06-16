@@ -26,13 +26,14 @@ def run_helper_container(port: int):
     container.stop()
     raise RuntimeError("Helper on port %d failed to start." % port)
 
-def send_updates_to_helper(updates, use_split_learning, port: int, round_id=None, helper_id=None, timeout=180):
+def send_updates_to_helper(updates, use_split_learning, port: int, round_id=None, helper_id=None, dataset='CIFAR10', timeout=180):
     url = f"http://{HELPER_HOST}:{port}/aggregate"
 
     # Build payload and serialize ONCE to count exact bytes sent
     payload = {
         "updates": updates,
         "use_split_learning": bool(use_split_learning),
+        "dataset": dataset,
         # optional identifiers so the helper can log them too
         "round": round_id,
         "helper_id": helper_id,
@@ -73,11 +74,11 @@ def send_updates_to_helper(updates, use_split_learning, port: int, round_id=None
     return aggregated
 
 
-def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, round_id=None, helper_id=None):
+def aggregate_via_helper(group_updates, use_split_learning=False, port=8500, round_id=None, helper_id=None, dataset='CIFAR10'):
     container = run_helper_container(port)
     try:
         result = send_updates_to_helper(group_updates, use_split_learning, port,
-                                        round_id=round_id, helper_id=helper_id)
+                                        round_id=round_id, helper_id=helper_id, dataset=dataset)
 
         usage, limit = get_container_mem_usage_limit(container)
         print(f"[MEM] round={round_id} helper={helper_id} port={port} "
